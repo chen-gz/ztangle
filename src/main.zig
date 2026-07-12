@@ -81,6 +81,9 @@ pub fn main(init: std.process.Init) !void {
     // Resolve the input file's directory
     const cwd_path = try std.process.currentPathAlloc(io, arena);
     const abs_input_path = try resolvePath(arena, cwd_path, input_file.?);
+    const is_mdx = std.mem.endsWith(u8, abs_input_path, ".mdx");
+    const comment_start = if (is_mdx) "{/* zig-result-start */}" else "<!-- zig-result-start -->";
+    const comment_end = if (is_mdx) "{/* zig-result-end */}" else "<!-- zig-result-end -->";
     const input_file_dir = std.fs.path.dirname(abs_input_path) orelse cwd_path;
 
     // Read the MDX file content
@@ -188,13 +191,15 @@ pub fn main(init: std.process.Init) !void {
                     std.mem.eql(u8, trimmed_next, "{{zig code result holder}}")) {
                     is_runnable = true;
                     is_placeholder = true;
-                } else if (std.mem.startsWith(u8, trimmed_next, "<!-- zig-result-start -->")) {
+                } else if (std.mem.startsWith(u8, trimmed_next, "<!-- zig-result-start -->") or
+                           std.mem.startsWith(u8, trimmed_next, "{/* zig-result-start */}")) {
                     is_runnable = true;
                     is_existing_result = true;
                     var find_end = placeholder_start;
                     while (find_end < input_lines.items.len) : (find_end += 1) {
                         const check_line = input_lines.items[find_end];
-                        if (std.mem.indexOf(u8, check_line, "<!-- zig-result-end -->") != null) {
+                        if (std.mem.indexOf(u8, check_line, "<!-- zig-result-end -->") != null or
+                            std.mem.indexOf(u8, check_line, "{/* zig-result-end */}") != null) {
                             existing_end_idx = find_end;
                             break;
                         }
@@ -202,9 +207,14 @@ pub fn main(init: std.process.Init) !void {
                     if (existing_end_idx == 0) {
                         is_runnable = false;
                     }
-                } else if (std.mem.eql(u8, trimmed_next, "<!-- zig-result-start --><!-- zig-result-end -->") or
-                           std.mem.eql(u8, trimmed_next, "<!--zig-result-start--><!--zig-result-end-->") or
-                           std.mem.eql(u8, trimmed_next, "<!-- zig-result-start -->\n<!-- zig-result-end -->")) {
+                } else if (
+                    std.mem.eql(u8, trimmed_next, "<!-- zig-result-start --><!-- zig-result-end -->") or
+                    std.mem.eql(u8, trimmed_next, "<!--zig-result-start--><!--zig-result-end-->") or
+                    std.mem.eql(u8, trimmed_next, "<!-- zig-result-start -->\n<!-- zig-result-end -->") or
+                    std.mem.eql(u8, trimmed_next, "{/* zig-result-start */}{/* zig-result-end */}") or
+                    std.mem.eql(u8, trimmed_next, "{/*zig-result-start*/}{/*zig-result-end*/}") or
+                    std.mem.eql(u8, trimmed_next, "{/* zig-result-start */}\n{/* zig-result-end */}")
+                ) {
                     is_runnable = true;
                     is_placeholder = true;
                 }
@@ -254,14 +264,16 @@ pub fn main(init: std.process.Init) !void {
             if (seg.is_placeholder) {
                 const section_output = try extractSectionOutput(arena, run_output, seg.block_index);
                 
-                try output.appendSlice(arena, "<!-- zig-result-start -->\n");
+                try output.appendSlice(arena, comment_start);
+                try output.append(arena, '\n');
                 try output.appendSlice(arena, "```\n");
                 try output.appendSlice(arena, section_output);
                 if (section_output.len == 0 or section_output[section_output.len - 1] != '\n') {
                     try output.append(arena, '\n');
                 }
                 try output.appendSlice(arena, "```\n");
-                try output.appendSlice(arena, "<!-- zig-result-end -->\n");
+                try output.appendSlice(arena, comment_end);
+                try output.append(arena, '\n');
             } else {
                 try output.appendSlice(arena, seg.content);
                 try output.append(arena, '\n');
