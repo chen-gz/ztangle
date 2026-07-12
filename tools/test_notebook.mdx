@@ -1,0 +1,129 @@
+---
+title: "Test MDX Notebook"
+zig_dependencies:
+  zig_ml: "https://github.com/chen-gz/znn.git"
+zig_flags: "-lc -framework Accelerate"
+---
+
+# Test notebook
+
+Let's test simple code:
+
+```zig
+const std = @import("std");
+const zig_ml = @import("zig_ml");
+const tensor = zig_ml.tensor;
+const nn = zig_ml.nn;
+const autodiff = zig_ml.autodiff;
+```
+
+```zig
+fn printTensorInfo(t: *tensor.Tensor) void {
+    std.debug.print("Tensor shape: [", .{});
+    for (0..t.shape.len) |idx| {
+        std.debug.print("{}, ", .{t.shape.dims[idx]});
+    }
+    std.debug.print("], data: [", .{});
+    const limit = if (t.data.len > 4) @as(usize, 4) else t.data.len;
+    for (0..limit) |idx| {
+        std.debug.print("{d:.4}, ", .{t.data[idx]});
+    }
+    std.debug.print("...]\n", .{});
+}
+```
+
+Now let's test initializing an Embedding layer and running forward pass:
+
+```zig
+const allocator = init.arena.allocator();
+var prng = std.Random.DefaultPrng.init(1337);
+var emb = try nn.Embedding.init(allocator, 10, 4, prng.random());
+
+var graph = autodiff.Graph.init(allocator);
+
+const x_node = try graph.tensorND(&.{2, 3}, false);
+x_node.data[0] = 0; x_node.data[1] = 1; x_node.data[2] = 2;
+x_node.data[3] = 3; x_node.data[4] = 4; x_node.data[5] = 5;
+
+const y = try emb.forward(allocator, &graph, x_node);
+std.debug.print("Block 3 execution: forward completed\n", .{});
+printTensorInfo(y);
+```
+
+<!-- zig-result-start -->
+```
+Block 3 execution: forward completed
+Tensor shape: [2, 3, 4, ], data: [-0.7847, 0.1894, 0.7741, 1.0043, ...]
+```
+<!-- zig-result-end -->
+
+Now let's run backward pass using the variables from Block 3:
+
+```zig
+// Let's set some gradients on y
+@memset(y.grad, 1.0);
+
+// Backward propagation
+std.debug.print("Block 4 execution: running backward pass\n", .{});
+try graph.backward(y);
+
+std.debug.print("Embedding weights gradients:\n", .{});
+for (0..6) |idx| {
+    std.debug.print("Row {}: [", .{idx});
+    for (0..4) |d| {
+        std.debug.print("{d:.4}, ", .{emb.weight.grad[idx * 4 + d]});
+    }
+    std.debug.print("]\n", .{});
+}
+```
+
+<!-- zig-result-start -->
+```
+Block 4 execution: running backward pass
+Embedding weights gradients:
+Row 0: [1.0000, 1.0000, 1.0000, 1.0000, ]
+Row 1: [1.0000, 1.0000, 1.0000, 1.0000, ]
+Row 2: [1.0000, 1.0000, 1.0000, 1.0000, ]
+Row 3: [1.0000, 1.0000, 1.0000, 1.0000, ]
+Row 4: [1.0000, 1.0000, 1.0000, 1.0000, ]
+Row 5: [1.0000, 1.0000, 1.0000, 1.0000, ]
+```
+<!-- zig-result-end -->
+
+# Test Hidden Code Blocks
+
+We will define some variables and helper functions inside hidden blocks and verify they can be used in a subsequent visible block.
+
+<!--
+```zig
+const hidden_val = 999;
+```
+-->
+
+<div style={{ display: 'none' }}>
+```zig
+fn multiplyByTen(val: i32) i32 {
+    return val * 10;
+}
+```
+</div>
+
+Now let's use them:
+
+```zig
+std.debug.print("Hidden block test:\n", .{});
+std.debug.print("hidden_val = {}\n", .{hidden_val});
+std.debug.print("multiplyByTen(5) = {}\n", .{multiplyByTen(5)});
+```
+
+<!-- zig-result-start -->
+```
+Hidden block test:
+hidden_val = 999
+multiplyByTen(5) = 50
+```
+<!-- zig-result-end -->
+
+
+
+
