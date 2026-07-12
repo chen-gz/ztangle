@@ -260,7 +260,7 @@ pub fn main(init: std.process.Init) !void {
         const run_output = try runAllZigBlocks(arena, io, init.environ_map, accumulated_blocks, merged_deps, merged_flags, input_file_dir, keep_temp);
 
         // Reconstruct the file with the output substituted
-        for (segments.items) |seg| {
+        for (segments.items, 0..) |seg, idx| {
             if (seg.is_placeholder) {
                 const section_output = try extractSectionOutput(arena, run_output, seg.block_index);
                 
@@ -273,17 +273,23 @@ pub fn main(init: std.process.Init) !void {
                 }
                 try output.appendSlice(arena, "```\n");
                 try output.appendSlice(arena, comment_end);
-                try output.append(arena, '\n');
+                if (idx < segments.items.len - 1) {
+                    try output.append(arena, '\n');
+                }
             } else {
                 try output.appendSlice(arena, seg.content);
-                try output.append(arena, '\n');
+                if (idx < segments.items.len - 1) {
+                    try output.append(arena, '\n');
+                }
             }
         }
     } else {
         // Just write segments back unchanged
-        for (segments.items) |seg| {
+        for (segments.items, 0..) |seg, idx| {
             try output.appendSlice(arena, seg.content);
-            try output.append(arena, '\n');
+            if (idx < segments.items.len - 1) {
+                try output.append(arena, '\n');
+            }
         }
     }
 
